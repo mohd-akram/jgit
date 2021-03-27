@@ -37,6 +37,8 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.dircache.DirCache;
 import org.eclipse.jgit.lib.CLIRepositoryTestCase;
 import org.eclipse.jgit.lib.FileMode;
+import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.util.sha1.SHA1;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -49,7 +51,7 @@ public class ArchiveTest extends CLIRepositoryTestCase {
 	public void setUp() throws Exception {
 		super.setUp();
 		git = new Git(db);
-		git.commit().setMessage("initial commit").call();
+		git.commit().setMessage("initial commit\n").call();
 		emptyTree = db.resolve("HEAD^{tree}").abbreviate(12).name();
 	}
 
@@ -484,10 +486,10 @@ public class ArchiveTest extends CLIRepositoryTestCase {
 		byte[] archive = CLIGitCommand.executeRaw(
 				"git archive --format=tar master", db).outBytes();
 		writeRaw("with-modes.tar", archive);
-		assertTarContainsEntry("with-modes.tar", "-rw-r--r--", "plain");
-		assertTarContainsEntry("with-modes.tar", "-rwxr-xr-x", "executable");
+		assertTarContainsEntry("with-modes.tar", "-rw-rw-r--", "plain");
+		assertTarContainsEntry("with-modes.tar", "-rwxrwxr-x", "executable");
 		assertTarContainsEntry("with-modes.tar", "l", "symlink -> plain");
-		assertTarContainsEntry("with-modes.tar", "drwxr-xr-x", "dir/");
+		assertTarContainsEntry("with-modes.tar", "drwxrwxr-x", "dir/");
 	}
 
 	@Test
@@ -554,6 +556,22 @@ public class ArchiveTest extends CLIRepositoryTestCase {
 				"git archive --format=tar HEAD", db).outBytes();
 		assertArrayEquals(new String[] { payload },
 				tarEntryContent(result, "xyzzy"));
+	}
+
+	@Test
+	public void testTarReproducible() throws Exception {
+		writeTrashFile("dir/file", "content");
+		writeLink("dir/link", "file");
+		writeTrashFile("dir/exec", "#!/bin/sh").setExecutable(true);
+		git.add().addFilepattern(".").call();
+		git.commit().setMessage("archive\n").call();
+
+		byte[] result = CLIGitCommand.executeRaw(
+				"git archive --format=tar HEAD", db).outBytes();
+		SHA1 s = SHA1.newInstance();
+		s.update(result);
+		assertEquals("1851cc4723dcb44e0b44e10a57330a263c423821",
+			ObjectId.toString(s.toObjectId()));
 	}
 
 	private Process spawnAssumingCommandPresent(String... cmdline) {
